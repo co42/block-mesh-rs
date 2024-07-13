@@ -2,10 +2,12 @@ mod merge_strategy;
 
 pub use merge_strategy::*;
 
-use crate::{bounds::assert_in_bounds, OrientedBlockFace, QuadBuffer, UnorientedQuad, Voxel, VoxelVisibility};
+use crate::{
+    bounds::assert_in_bounds, OrientedBlockFace, QuadBuffer, UnorientedQuad, Voxel, VoxelVisibility,
+};
 
 use ilattice::glam::UVec3;
-use ilattice::prelude::Extent;
+use ilattice::prelude::Aabb;
 use ndcopy::fill3;
 use ndshape::Shape;
 
@@ -96,7 +98,7 @@ pub fn greedy_quads_with_merge_strategy<T, S, Merger>(
 
     let min = UVec3::from(min).as_ivec3();
     let max = UVec3::from(max).as_ivec3();
-    let extent = Extent::from_min_and_max(min, max);
+    let extent = Aabb::new(min, max);
 
     output.reset(voxels.len());
     let GreedyQuadsBuffer {
@@ -105,8 +107,7 @@ pub fn greedy_quads_with_merge_strategy<T, S, Merger>(
     } = output;
 
     let interior = extent.padded(-1); // Avoid accessing out of bounds with a 3x3x3 kernel.
-    let interior =
-        Extent::from_min_and_shape(interior.minimum.as_uvec3(), interior.shape.as_uvec3());
+    let interior = Aabb::from_min_and_shape(interior.min.as_uvec3(), interior.shape().as_uvec3());
 
     for (group, face) in groups.iter_mut().zip(faces.iter()) {
         greedy_quads_for_face::<_, _, Merger>(voxels, voxels_shape, interior, face, visited, group);
@@ -116,7 +117,7 @@ pub fn greedy_quads_with_merge_strategy<T, S, Merger>(
 fn greedy_quads_for_face<T, S, Merger>(
     voxels: &[T],
     voxels_shape: &S,
-    interior: Extent<UVec3>,
+    interior: Aabb<UVec3>,
     face: &OrientedBlockFace,
     visited: &mut [bool],
     quads: &mut Vec<UnorientedQuad>,
@@ -141,13 +142,13 @@ fn greedy_quads_for_face<T, S, Merger>(
     let i_u = u_axis.index();
     let i_v = v_axis.index();
 
-    let interior_shape = interior.shape.to_array();
+    let interior_shape = interior.shape().to_array();
     let num_slices = interior_shape[i_n];
     let mut slice_shape = [0; 3];
     slice_shape[i_n] = 1;
     slice_shape[i_u] = interior_shape[i_u];
     slice_shape[i_v] = interior_shape[i_v];
-    let mut slice_extent = Extent::from_min_and_shape(interior.minimum, UVec3::from(slice_shape));
+    let mut slice_extent = Aabb::from_min_and_shape(interior.min, UVec3::from(slice_shape));
 
     let n_stride = voxels_shape.linearize(n.to_array());
     let u_stride = voxels_shape.linearize(u.to_array());
@@ -165,7 +166,7 @@ fn greedy_quads_for_face<T, S, Merger>(
     };
 
     for _ in 0..num_slices {
-        let slice_ub = slice_extent.least_upper_bound().to_array();
+        let slice_ub = (slice_extent.min + slice_extent.shape()).to_array();
         let u_ub = slice_ub[i_u];
         let v_ub = slice_ub[i_v];
 
